@@ -97,6 +97,16 @@
         }
         .analyze-ui button:hover { background: rgba(0,0,0,0.7); }
         .fullness-output { color: #ffd700; white-space: pre-line; font-size: 14px; }
+
+        /* Snapshot preview */
+        .snapshot-wrapper {
+            position: absolute;
+            top: 260px;
+            left: 20px;
+            z-index: 12;
+        }
+        #snapshot { max-width: 360px; display: none; border: 2px solid rgba(255,255,255,0.4); border-radius: 6px; }
+        #snapshotOverlay { position: absolute; left: 0; top: 0; display: none; }
         
         .camera-selector select:focus {
             outline: none;
@@ -152,6 +162,11 @@
         <div id="fullness-output" class="fullness-output"></div>
     </div>
 
+    <div class="snapshot-wrapper">
+        <img id="snapshot" />
+        <canvas id="snapshotOverlay"></canvas>
+    </div>
+
     <video id="video" style="position: absolute; top: 10px; right: 10px; width: 160px; height: 120px; border: 2px solid white; border-radius: 8px; z-index: 20;"></video>
     <canvas id="canvas"></canvas>
 
@@ -166,6 +181,9 @@
         const cameraSelect = document.getElementById('camera-select');
         const btnAnalyze = document.getElementById('btn-analyze');
         const fullnessOutput = document.getElementById('fullness-output');
+        const snapshotImg = document.getElementById('snapshot');
+        const snapshotCanvas = document.getElementById('snapshotOverlay');
+        const snapshotCtx = snapshotCanvas.getContext('2d');
 
         const btnBlue = document.getElementById('btn-blue');
         const btnGreen = document.getElementById('btn-green');
@@ -970,6 +988,16 @@
             try {
                 // Try Vercel serverless function first
                 const dataUrl = captureFrameDataUrl();
+                // Show snapshot while analyzing
+                snapshotImg.src = dataUrl;
+                snapshotImg.style.display = 'block';
+                await new Promise(r => (snapshotImg.onload = r));
+                snapshotCanvas.width = snapshotImg.naturalWidth;
+                snapshotCanvas.height = snapshotImg.naturalHeight;
+                snapshotCanvas.style.width = snapshotImg.clientWidth + 'px';
+                snapshotCanvas.style.height = snapshotImg.clientHeight + 'px';
+                snapshotCanvas.style.display = 'block';
+                snapshotCtx.clearRect(0, 0, snapshotCanvas.width, snapshotCanvas.height);
                 let res = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1002,6 +1030,21 @@
                         lines.push(String(raw));
                     }
                     fullnessOutput.textContent = lines.join('\n');
+                    // Draw overlay on snapshot
+                    if (typeof fullness === 'number') {
+                        snapshotCtx.save();
+                        const fillTopPx = Math.max(0, Math.round(snapshotCanvas.height * (1 - fullness / 100)));
+                        const fillHeightPx = snapshotCanvas.height - fillTopPx;
+                        snapshotCtx.fillStyle = 'rgba(0, 150, 255, 0.25)';
+                        snapshotCtx.fillRect(0, fillTopPx, snapshotCanvas.width, fillHeightPx);
+                        snapshotCtx.strokeStyle = 'rgba(0, 150, 255, 0.9)';
+                        snapshotCtx.lineWidth = 3;
+                        snapshotCtx.beginPath();
+                        snapshotCtx.moveTo(0, fillTopPx);
+                        snapshotCtx.lineTo(snapshotCanvas.width, fillTopPx);
+                        snapshotCtx.stroke();
+                        snapshotCtx.restore();
+                    }
                 } else {
                     fullnessOutput.textContent = 'No result returned.';
                 }
