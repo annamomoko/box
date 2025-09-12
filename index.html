@@ -242,6 +242,7 @@
                 this.isScattering = false;
                 this.scatterSpeed = 0;
                 this.scatterUntil = 0;
+                this.growHighlightUntil = 0;
             }
             
             generateColor() {
@@ -363,6 +364,19 @@
                 ctx.strokeStyle = 'rgba(255,255,255,0.3)';
                 ctx.lineWidth = 2;
                 ctx.stroke();
+
+                // Growth highlight glow (temporary visual cue when size increases)
+                if (Date.now() < this.growHighlightUntil) {
+                    ctx.save();
+                    ctx.shadowColor = '#ffd700';
+                    ctx.shadowBlur = 20;
+                    ctx.strokeStyle = '#ffd700';
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, this.size, this.size * 0.6, 0, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                }
                 
                 // Draw eye
                 ctx.fillStyle = 'white';
@@ -535,6 +549,7 @@
                 // Optional cap to avoid runaway growth
                 f.size = Math.min(newSize, 120);
                 f.personalSpace = f.size * 3;
+                f.growHighlightUntil = Date.now() + 900; // ~0.9s glow
             }
         }
         
@@ -994,6 +1009,12 @@
                 document.body.classList.add('hidden-ui');
             } else if (key === 'a') {
                 document.body.classList.remove('hidden-ui');
+            } else if (key === 'f') {
+                // Simulate +10 hand detections and trigger growth effect
+                handCount += 10;
+                if (handCounterEl) handCounterEl.textContent = `Hands: ${handCount}`;
+                growHalfFishBy(0.05);
+                triggerScatter();
             }
             if (key === 'd') {
                 triggerScatterLeft();
