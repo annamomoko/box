@@ -1019,6 +1019,10 @@
                 if (data) {
                     const { fullness, stone, plastic, other, reasons, outputFormat, raw } = data;
                     const lines = [];
+                    if (raw) {
+                        lines.push(String(raw));
+                        lines.push('');
+                    }
                     lines.push(`Fullness: ${fullness ?? '-'}%`);
                     if (Array.isArray(reasons) && reasons.length) {
                         lines.push('Reasons:');

@@ -101,7 +101,7 @@ export default async function handler(req, res) {
       messages: [
         {
           role: "system",
-          content: "You are an assistant that analyzes images of a transparent box. Estimate how full the box is (as a % of total volume, there might be something floating from the top of the box, do not count these. the volunn refers to items continiously built up from the bottom of the box. Pay attention to the depth of the box as well while anyalizing.) and estimate the % of stone, plastic, and other materials inside. Respond with JSON: {fullness: %, stone: %, plastic: %, other: %}"
+          content: "You are an assistant that analyzes images of a transparent box. Provide a concise but informative paragraph describing what the camera sees and how full the box is (as a % of total volume). Do not count floating items that are not part of the stack. Consider the box depth. At the end of your answer, add a single line in this exact format: Fullness: NN% | Stone: NN% | Plastic: NN% | Other: NN%"
         },
         {
           role: "user",
