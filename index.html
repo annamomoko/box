@@ -139,6 +139,33 @@
         .theme-buttons button:hover {
             background: rgba(0,0,0,0.7);
         }
+
+        /* Hand detection counter */
+        .hand-counter {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 50;
+            color: #fff;
+            background: rgba(0,0,0,0.45);
+            border: 1px solid rgba(255,255,255,0.5);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 14px;
+        }
+
+        /* Hide UI helper */
+        .hidden-ui .instructions,
+        .hidden-ui .status,
+        .hidden-ui .camera-status,
+        .hidden-ui .debug-info,
+        .hidden-ui .camera-selector,
+        .hidden-ui .theme-buttons,
+        .hidden-ui .analyze-ui,
+        .hidden-ui .snapshot-wrapper,
+        .hidden-ui #video {
+            display: none !important;
+        }
   </style>
 </head>
 <body>
@@ -169,6 +196,7 @@
 
     <video id="video" style="position: absolute; top: 10px; right: 10px; width: 160px; height: 120px; border: 2px solid white; border-radius: 8px; z-index: 20;"></video>
     <canvas id="canvas"></canvas>
+    <div id="hand-counter" class="hand-counter">Hands: 0</div>
 
     <script>
         const canvas = document.getElementById('canvas');
@@ -184,6 +212,8 @@
         const snapshotImg = document.getElementById('snapshot');
         const snapshotCanvas = document.getElementById('snapshotOverlay');
         const snapshotCtx = snapshotCanvas.getContext('2d');
+        const handCounterEl = document.getElementById('hand-counter');
+        let handCount = 0;
 
         const btnBlue = document.getElementById('btn-blue');
         const btnGreen = document.getElementById('btn-green');
@@ -500,6 +530,10 @@
         let baselineSet = false;
         let baselineSkinPixels = 0;
         let frameCount = 0;
+        // Robustness helpers: EMA baseline and multi-frame confirmation
+        let emaBaseline = 0;
+        const emaAlpha = 0.05; // lower = smoother baseline
+        let consecutiveHandFrames = 0;
         
         // Camera management variables
         let availableCameras = [];
@@ -687,26 +721,39 @@
                 // Set baseline after first 30 frames
                 if (!baselineSet && frameCount > 30) {
                     baselineSkinPixels = totalSkinPixels;
+                    emaBaseline = totalSkinPixels;
                     baselineSet = true;
                     debugInfo.textContent = `Hand detection: Ready (baseline: ${Math.round(baselineSkinPixels)})`;
                 }
                 
-                // Hand detection logic: significant increase from baseline + hand-like regions
-                const skinIncrease = totalSkinPixels - baselineSkinPixels;
-                const handDetected = baselineSet && 
-                                  skinIncrease > 500 && 
-                                  handLikeRegions >= 1 && 
-                                  totalSkinPixels > 800;
+                // Hand detection logic: robust check using EMA baseline + region consensus + multi-frame confirm
+                const skinIncrease = totalSkinPixels - baselineSkinPixels; // used for scatter intensity thresholds
+                const deltaFromEma = totalSkinPixels - emaBaseline;
+                const requiredDelta = Math.max(1800, emaBaseline * 0.35);
+                const handCandidate = baselineSet && deltaFromEma > requiredDelta && handLikeRegions >= 2 && totalSkinPixels > 1200;
+                
+                if (handCandidate) {
+                    consecutiveHandFrames++;
+                } else {
+                    consecutiveHandFrames = 0;
+                    if (baselineSet) {
+                        emaBaseline = emaAlpha * totalSkinPixels + (1 - emaAlpha) * emaBaseline;
+                    }
+                }
+                
+                const handDetected = consecutiveHandFrames >= 3 && (Date.now() - lastHandDetection > handDetectionCooldown);
                 
                 // Update debug info
-                debugInfo.textContent = `Skin pixels: ${Math.round(totalSkinPixels)} (Δ${Math.round(skinIncrease)}) | Hand-like regions: ${handLikeRegions}`;
+                debugInfo.textContent = `Skin: ${Math.round(totalSkinPixels)} | EMA: ${Math.round(emaBaseline)} | ΔEMA:${Math.round(deltaFromEma)} | seq:${consecutiveHandFrames} | regions:${handLikeRegions}`;
                 
                 if (handDetected && Date.now() - lastHandDetection > handDetectionCooldown) {
-                    if (skinIncrease > 4500) {
+                    handCount++;
+                    if (handCounterEl) handCounterEl.textContent = `Hands: ${handCount}`;
+                    if (skinIncrease > 3500) {
                         triggerScatterLeft();
-                    } else if (skinIncrease >= 1500 && skinIncrease <= 4500) {
+                    } else if (skinIncrease >= 1200 && skinIncrease <= 3500) {
                         triggerScatter();
-                    } else if (skinIncrease < 1500) {
+                    } else if (skinIncrease < 1200) {
                         triggerScatterRight();
                     } else {
                         triggerScatter();
@@ -927,6 +974,11 @@
         // Event listeners
         document.addEventListener('keydown', (e) => {
             const key = e.key.toLowerCase();
+            if (key === 'd') {
+                document.body.classList.add('hidden-ui');
+            } else if (key === 'a') {
+                document.body.classList.remove('hidden-ui');
+            }
             if (key === 'd') {
                 triggerScatterLeft();
             } else if (key === 'l') {
