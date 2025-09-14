@@ -761,11 +761,14 @@
                     debugInfo.textContent = `Hand detection: Ready (baseline: ${Math.round(baselineSkinPixels)})`;
                 }
                 
-                // Hand detection logic: robust check using EMA baseline + region consensus + multi-frame confirm
-                const skinIncrease = totalSkinPixels - baselineSkinPixels; // used for scatter intensity thresholds
+                // Hand detection logic (reverted to simpler, more permissive behavior)
+                const skinIncrease = totalSkinPixels - baselineSkinPixels;
                 const deltaFromEma = totalSkinPixels - emaBaseline;
-                const requiredDelta = Math.max(1800, emaBaseline * 0.35);
-                const handCandidate = baselineSet && deltaFromEma > requiredDelta && handLikeRegions >= 2 && totalSkinPixels > 1200;
+                const requiredDelta = Math.max(500, baselineSkinPixels * 0.15);
+                const handCandidate = baselineSet && (
+                    skinIncrease > requiredDelta ||
+                    (handLikeRegions >= 1 && totalSkinPixels > 800)
+                );
                 
                 if (handCandidate) {
                     consecutiveHandFrames++;
@@ -776,7 +779,7 @@
                     }
                 }
                 
-                const handDetected = consecutiveHandFrames >= 3 && (Date.now() - lastHandDetection > handDetectionCooldown);
+                const handDetected = consecutiveHandFrames >= 1 && (Date.now() - lastHandDetection > handDetectionCooldown);
                 
                 // Update debug info
                 debugInfo.textContent = `Skin: ${Math.round(totalSkinPixels)} | EMA: ${Math.round(emaBaseline)} | ΔEMA:${Math.round(deltaFromEma)} | seq:${consecutiveHandFrames} | regions:${handLikeRegions}`;
