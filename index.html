@@ -789,7 +789,7 @@
                     if (handCounterEl) handCounterEl.textContent = `Hands: ${handCount}`;
                     // Simplified: always trigger general scatter on hand detection
                     triggerScatter();
-                    if (handCount % 10 === 0) {
+                    if (handCount % 2 === 0) {
                         growHalfFishBy(0.05);
                     }
                     lastHandDetection = Date.now();
