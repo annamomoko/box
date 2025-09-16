@@ -429,50 +429,78 @@
         
         // Water splash effects
         class WaterSplash {
-            constructor(x, y) {
+            constructor(x, y, opts = {}) {
                 this.x = x;
                 this.y = y;
                 this.particles = [];
-                this.life = 1.0;
+                // introduce variants so not all splashes look the same
+                this.variant = opts.variant || (Math.random() < 0.35 ? 'short' : (Math.random() < 0.5 ? 'spray' : 'normal'));
                 
-                // Create splash particles
-                for (let i = 0; i < 20; i++) {
+                // overall splash lifetime and decay, varied per variant
+                if (this.variant === 'short') {
+                    this.life = 0.8 + Math.random() * 0.2;
+                    this.lifeDecay = 0.05 + Math.random() * 0.03;
+                } else if (this.variant === 'spray') {
+                    this.life = 1.0;
+                    this.lifeDecay = 0.035 + Math.random() * 0.015;
+                } else {
+                    this.life = 1.0;
+                    this.lifeDecay = 0.03 + Math.random() * 0.02;
+                }
+                
+                // particle count, speed and size ranges per variant
+                const particleCount = this.variant === 'short'
+                    ? 8 + Math.floor(Math.random() * 6)
+                    : this.variant === 'spray'
+                        ? 18 + Math.floor(Math.random() * 10)
+                        : 16 + Math.floor(Math.random() * 10);
+                const speedRange = this.variant === 'spray' ? 14 : (this.variant === 'short' ? 8 : 12);
+                const sizeMin = this.variant === 'short' ? 1 : (this.variant === 'spray' ? 1 : 3);
+                const sizeMax = this.variant === 'short' ? 4 : (this.variant === 'spray' ? 6 : 8);
+                
+                // Create splash particles with per-particle decay variation
+                for (let i = 0; i < particleCount; i++) {
                     this.particles.push({
                         x: x,
                         y: y,
-                        vx: (Math.random() - 0.5) * 12,
-                        vy: (Math.random() - 0.5) * 12,
-                        life: 1.0,
-                        size: Math.random() * 8 + 3
+                        vx: (Math.random() - 0.5) * speedRange,
+                        vy: (Math.random() - 0.5) * speedRange,
+                        life: 0.7 + Math.random() * 0.6,
+                        lifeDecay: (this.variant === 'short' ? 0.05 : 0.02) + Math.random() * 0.03,
+                        size: Math.random() * (sizeMax - sizeMin) + sizeMin,
+                        sizeDecay: 0.96 + Math.random() * 0.03
                     });
                 }
             }
             
             update() {
-                this.life -= 0.03;
+                this.life -= this.lifeDecay;
                 this.particles.forEach(p => {
                     p.x += p.vx;
                     p.y += p.vy;
-                    p.vx *= 0.95;
-                    p.vy *= 0.95;
-                    p.life -= 0.02;
-                    p.size *= 0.98;
+                    // slight damping
+                    p.vx *= 0.94;
+                    p.vy *= 0.94;
+                    // very subtle upward drift for "spray"
+                    if (this.variant === 'spray') p.vy -= 0.03;
+                    p.life -= p.lifeDecay;
+                    p.size *= p.sizeDecay;
                 });
                 
-                this.particles = this.particles.filter(p => p.life > 0);
-                return this.life > 0;
+                this.particles = this.particles.filter(p => p.life > 0 && p.size > 0.2);
+                return this.life > 0 && this.particles.length > 0;
             }
             
             draw() {
                 this.particles.forEach(p => {
                     ctx.save();
-                    ctx.globalAlpha = p.life * 0.6;
+                    ctx.globalAlpha = Math.max(0, Math.min(1, p.life)) * 0.6;
                     ctx.fillStyle = '#87ceeb';
                     ctx.beginPath();
                     ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
                     ctx.fill();
                     
-                    ctx.globalAlpha = p.life * 0.3;
+                    ctx.globalAlpha = Math.max(0, Math.min(1, p.life)) * 0.3;
                     ctx.fillStyle = 'white';
                     ctx.beginPath();
                     ctx.arc(p.x, p.y, p.size * 0.5, 0, Math.PI * 2);
@@ -488,27 +516,30 @@
                 this.x = x;
                 this.y = y;
                 this.radius = 0;
-                this.maxRadius = 150;
+                this.maxRadius = 100 + Math.random() * 120;
+                this.growth = 2 + Math.random() * 4;
                 this.life = 1.0;
+                this.lineWidth = 2 + Math.random() * 3;
+                this.alpha = 0.2 + Math.random() * 0.2;
             }
             
             update() {
-                this.radius += 4;
+                this.radius += this.growth;
                 this.life = 1 - (this.radius / this.maxRadius);
                 return this.life > 0;
             }
             
             draw() {
                 ctx.save();
-                ctx.globalAlpha = this.life * 0.3;
+                ctx.globalAlpha = this.alpha * Math.max(0, this.life);
                 ctx.strokeStyle = '#87ceeb';
-                ctx.lineWidth = 3;
+                ctx.lineWidth = this.lineWidth;
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
                 ctx.stroke();
                 
-                ctx.globalAlpha = this.life * 0.1;
-                ctx.lineWidth = 6;
+                ctx.globalAlpha = this.alpha * 0.4 * Math.max(0, this.life);
+                ctx.lineWidth = this.lineWidth * 1.8;
                 ctx.stroke();
                 ctx.restore();
             }
@@ -518,6 +549,27 @@
         const fish = [];
         const fishCount = 25;
         const waterEffects = [];
+        const trashItems = [];
+        let trashAddCount = 3; // fixed items per 't' press
+        let yellowTintStrength = 0; // 0..1, increases with 't'
+        
+        // Effect helpers
+        function randomEffectMode() {
+            const r = Math.random();
+            if (r < 1/3) return 'splash';
+            if (r < 2/3) return 'ripple';
+            return 'both';
+        }
+        function addWaterEffects(x, y, mode) {
+            if (mode === 'splash') {
+                waterEffects.push(new WaterSplash(x, y));
+            } else if (mode === 'ripple') {
+                waterEffects.push(new WaterRipple(x, y));
+            } else {
+                waterEffects.push(new WaterSplash(x, y));
+                waterEffects.push(new WaterRipple(x, y));
+            }
+        }
         
         // Create fish in a more spread out formation
         for (let i = 0; i < fishCount; i++) {
@@ -559,6 +611,8 @@
         let groupAngle = 0;
         let lastHandDetection = 0;
         let handDetectionCooldown = 3000; // 3 second cooldown
+        let lastSideScatter = 0;
+        const sideScatterCooldown = 1500; // debounce side-scatter to avoid rapid re-targeting
         
         // Hand detection variables
         let handDetectionEnabled = false;
@@ -871,59 +925,174 @@
                 scatterTime = Date.now();
                 status.textContent = 'Fish scattered! Regrouping in 3 seconds...';
                 
-                // Scatter all fish and create water effects
+                // Scatter all fish and create randomized water effects
+                const effectMode = randomEffectMode();
                 fish.forEach(f => {
                     f.scatter();
                     
-                    // Create splash effects around each fish
-                    waterEffects.push(new WaterSplash(f.x, f.y));
-                    waterEffects.push(new WaterRipple(f.x, f.y));
+                    // Randomized per-fish water effects (same mode for this trigger)
+                    addWaterEffects(f.x, f.y, effectMode);
                 });
                 
-                // Create some random splashes for dramatic effect
+                // Create some extra effects from random fish for dramatic effect (no random positions)
                 for (let i = 0; i < 8; i++) {
                     setTimeout(() => {
-                        waterEffects.push(new WaterSplash(
-                            Math.random() * canvas.width,
-                            Math.random() * canvas.height
-                        ));
-                        waterEffects.push(new WaterRipple(
-                            Math.random() * canvas.width,
-                            Math.random() * canvas.height
-                        ));
+                        const rf = fish[Math.floor(Math.random() * fish.length)];
+                        if (rf) addWaterEffects(rf.x, rf.y, effectMode);
                     }, Math.random() * 500);
                 }
             }
         }
 
+        // Floating trash
+        class FloatingTrash {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.size = Math.random() * 18 + 12;
+                // Weighted selection favoring digital-themed items
+                const types = ['gpu', 'battery', 'bottle', 'bag'];
+                const weights = [0.4, 0.3, 0.2, 0.1];
+                const r = Math.random();
+                let acc = 0;
+                for (let i = 0; i < types.length; i++) { acc += weights[i]; if (r <= acc) { this.type = types[i]; break; } }
+                if (!this.type) this.type = 'gpu';
+                this.vx = (Math.random() * 0.6 + 0.2) * (Math.random() < 0.5 ? -1 : 1);
+                this.vy = Math.random() * 0.2 - 0.1;
+                this.floatPhase = Math.random() * Math.PI * 2;
+                this.rotation = Math.random() * Math.PI * 2;
+                this.rotationSpeed = (Math.random() - 0.5) * 0.01;
+                this.opacity = 0.85;
+            }
+            update() {
+                // gentle bobbing and drift
+                this.x += this.vx + Math.sin(Date.now() * 0.001 + this.floatPhase) * 0.15;
+                this.y += this.vy + Math.cos(Date.now() * 0.0012 + this.floatPhase) * 0.1;
+                this.rotation += this.rotationSpeed;
+                // wrap around horizontally, clamp vertically near surface
+                if (this.x < -40) this.x = canvas.width + 40;
+                if (this.x > canvas.width + 40) this.x = -40;
+                this.y = Math.max(20, Math.min(canvas.height - 60, this.y));
+            }
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+                ctx.globalAlpha = this.opacity;
+                if (this.type === 'gpu') {
+                    // GPU-like board (stylized)
+                    const w = this.size * 1.8;
+                    const h = this.size * 1.0;
+                    // PCB
+                    ctx.fillStyle = '#1b5e20';
+                    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.roundRect(-w/2, -h/2, w, h, 4);
+                    ctx.fill();
+                    ctx.stroke();
+                    // Edge connector (gold fingers)
+                    ctx.fillStyle = '#d4af37';
+                    ctx.fillRect(-w/2 + 6, h/2 - 6, w * 0.45, 4);
+                    for (let i = 0; i < 6; i++) {
+                        ctx.fillRect(-w/2 + 8 + i * (w*0.45/6), h/2 - 10, 3, 8);
+                    }
+                    // Main chip
+                    ctx.fillStyle = '#111827';
+                    ctx.fillRect(-w*0.15, -h*0.2, w*0.3, h*0.4);
+                    // VRAM chips
+                    ctx.fillStyle = '#374151';
+                    const chipW = w * 0.18, chipH = h * 0.18;
+                    ctx.fillRect(-w*0.45, -h*0.35, chipW, chipH);
+                    ctx.fillRect(w*0.27, -h*0.35, chipW, chipH);
+                    ctx.fillRect(-w*0.45, h*0.17, chipW, chipH);
+                    ctx.fillRect(w*0.27, h*0.17, chipW, chipH);
+                } else if (this.type === 'battery') {
+                    // Battery (AA-like)
+                    const w = this.size * 0.9;
+                    const h = this.size * 2.0;
+                    ctx.fillStyle = '#9ca3af';
+                    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.roundRect(-w/2, -h/2, w, h, 6);
+                    ctx.fill();
+                    ctx.stroke();
+                    // Label band
+                    ctx.fillStyle = '#f59e0b';
+                    ctx.fillRect(-w/2, -h*0.15, w, h*0.3);
+                    // Terminals
+                    ctx.fillStyle = '#111827';
+                    ctx.fillRect(-w*0.2, -h/2 - 2, w*0.4, 4);
+                    // Plus sign
+                    ctx.fillStyle = '#111827';
+                    ctx.fillRect(-2, -h*0.1 - 4, 4, 8);
+                    ctx.fillRect(-6, -h*0.1 - 2, 12, 4);
+                } else if (this.type === 'bottle') {
+                    // bottle body
+                    ctx.fillStyle = 'rgba(180, 220, 255, 0.65)';
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, this.size * 0.5, this.size * 0.9, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    // bottle cap
+                    ctx.fillStyle = '#3b82f6';
+                    ctx.beginPath();
+                    ctx.ellipse(0, -this.size * 0.95, this.size * 0.25, this.size * 0.15, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    // plastic bag
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(-this.size * 0.7, this.size * 0.4);
+                    ctx.quadraticCurveTo(-this.size * 0.8, -this.size * 0.2, 0, -this.size * 0.6);
+                    ctx.quadraticCurveTo(this.size * 0.8, -this.size * 0.2, this.size * 0.7, this.size * 0.4);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    // bag handles hint
+                    ctx.beginPath();
+                    ctx.moveTo(-this.size * 0.3, -this.size * 0.4);
+                    ctx.quadraticCurveTo(-this.size * 0.15, -this.size * 0.65, 0, -this.size * 0.55);
+                    ctx.quadraticCurveTo(this.size * 0.15, -this.size * 0.65, this.size * 0.3, -this.size * 0.4);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+        }
+
         function triggerScatterSide(side) {
             const now = Date.now();
+            if (now - lastSideScatter < sideScatterCooldown) return;
+            lastSideScatter = now;
             const duration = 3000;
             const thirdX = canvas.width / 3;
             const twoThirdX = 2 * thirdX;
             const isLeft = side === 'left';
             status.textContent = isLeft ? 'Left side splash!' : 'Right side splash!';
             
+            const effectMode = randomEffectMode();
             fish.forEach(f => {
                 const inTargetThird = isLeft ? (f.x < thirdX) : (f.x >= twoThirdX);
                 const bleedFromOtherZones = !inTargetThird && Math.random() < 0.15; // small bleed for "mostly"
                 if (inTargetThird || bleedFromOtherZones) {
                     f.scatter();
                     f.scatterUntil = now + duration;
-                    waterEffects.push(new WaterSplash(f.x, f.y));
-                    waterEffects.push(new WaterRipple(f.x, f.y));
+                    addWaterEffects(f.x, f.y, effectMode);
                 }
             });
             
-            // Extra splashes confined to the target half
+            // Extra effects confined to the target half (originating from fish only)
             for (let i = 0; i < 6; i++) {
                 setTimeout(() => {
-                    const rx = isLeft 
-                        ? Math.random() * thirdX 
-                        : twoThirdX + Math.random() * (canvas.width - twoThirdX);
-                    const ry = Math.random() * canvas.height;
-                    waterEffects.push(new WaterSplash(rx, ry));
-                    waterEffects.push(new WaterRipple(rx, ry));
+                    const candidates = fish.filter(ff => isLeft ? (ff.x < thirdX) : (ff.x >= twoThirdX));
+                    const pool = candidates.length ? candidates : fish;
+                    const chosen = pool[Math.floor(Math.random() * pool.length)];
+                    if (chosen) addWaterEffects(chosen.x, chosen.y, effectMode);
                 }, Math.random() * 500);
             }
         }
@@ -938,7 +1107,7 @@
         
         // Animation loop
         function animate() {
-            // Clear canvas background using theme gradient
+            // Clear canvas background using theme gradient with yellow tint overlay
             const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
             const colors = themeGradients[selectedTheme] || themeGradients.blue;
             gradient.addColorStop(0, colors[0]);
@@ -952,6 +1121,12 @@
             }
             ctx.fillStyle = gradient;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Apply subtle yellow tint that accumulates
+            if (yellowTintStrength > 0) {
+                ctx.globalAlpha = Math.min(0.12, yellowTintStrength);
+                ctx.fillStyle = '#ffd54f';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
             ctx.restore();
             
             // Update group angle for natural movement
@@ -981,6 +1156,12 @@
                 } else {
                     waterEffects[i].draw();
                 }
+            }
+
+            // Update and draw floating trash
+            for (let i = 0; i < trashItems.length; i++) {
+                trashItems[i].update();
+                trashItems[i].draw();
             }
             
             // Add some bubbles for atmosphere
@@ -1019,12 +1200,21 @@
                 growHalfFishBy(0.05);
                 triggerScatter();
             }
-            if (key === 'd') {
+            if (key === 'j') {
                 triggerScatterLeft();
             } else if (key === 'l') {
                 triggerScatterRight();
             } else if (key === 'k') {
                 triggerScatter();
+            } else if (key === 't') {
+                // Add more floating trash each press
+                for (let i = 0; i < trashAddCount; i++) {
+                    const x = Math.random() * canvas.width;
+                    const y = Math.random() * Math.min(220, canvas.height * 0.4);
+                    trashItems.push(new FloatingTrash(x, y));
+                }
+                // Keep spawn amount fixed and increase yellow tint subtly
+                yellowTintStrength = Math.min(yellowTintStrength + 0.015, 0.12);
             }
         });
         
