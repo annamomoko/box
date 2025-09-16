@@ -243,6 +243,27 @@
                 this.scatterSpeed = 0;
                 this.scatterUntil = 0;
                 this.growHighlightUntil = 0;
+                this.growAnimStart = 0;
+                this.growAnimDuration = 500; // ms
+                this.growOvershoot = 0.3; // overshoot scale ~30% (more obvious)
+            }
+            
+            getGrowScale(now) {
+                const start = this.growAnimStart || 0;
+                const duration = this.growAnimDuration || 0;
+                if (!start || !duration) return 1;
+                const tMs = now - start;
+                if (tMs <= 0) return 1 + this.growOvershoot;
+                const t = tMs / duration;
+                if (t >= 1) return 1;
+                const upPhase = 0.25; // first quarter time ramps to overshoot
+                const easeOutCubic = (u) => 1 - Math.pow(1 - u, 3);
+                if (t < upPhase) {
+                    return 1 + this.growOvershoot * easeOutCubic(t / upPhase);
+                } else {
+                    const u = (t - upPhase) / (1 - upPhase);
+                    return 1 + this.growOvershoot * (1 - easeOutCubic(u));
+                }
             }
             
             generateColor() {
@@ -337,11 +358,14 @@
             
             draw() {
                 ctx.save();
+                const now = Date.now();
+                const scale = this.getGrowScale(now);
+                const drawSize = this.size * scale;
                 
                 // Draw tail
                 for (let i = 0; i < this.tail.length; i++) {
                     const alpha = (this.tail.length - i) / this.tail.length * 0.3;
-                    const size = this.size * (0.3 + alpha);
+                    const size = drawSize * (0.3 + alpha);
                     
                     ctx.globalAlpha = alpha;
                     ctx.fillStyle = this.color;
@@ -357,7 +381,7 @@
                 // Draw fish body
                 ctx.fillStyle = this.color;
                 ctx.beginPath();
-                ctx.ellipse(0, 0, this.size, this.size * 0.6, 0, 0, Math.PI * 2);
+                ctx.ellipse(0, 0, drawSize, drawSize * 0.6, 0, 0, Math.PI * 2);
                 ctx.fill();
                 
                 // Draw fish outline
@@ -366,14 +390,14 @@
                 ctx.stroke();
 
                 // Growth highlight glow (temporary visual cue when size increases)
-                if (Date.now() < this.growHighlightUntil) {
+                if (now < this.growHighlightUntil) {
                     ctx.save();
                     ctx.shadowColor = '#ffd700';
                     ctx.shadowBlur = 20;
                     ctx.strokeStyle = '#ffd700';
                     ctx.lineWidth = 4;
                     ctx.beginPath();
-                    ctx.ellipse(0, 0, this.size, this.size * 0.6, 0, 0, Math.PI * 2);
+                    ctx.ellipse(0, 0, drawSize, drawSize * 0.6, 0, 0, Math.PI * 2);
                     ctx.stroke();
                     ctx.restore();
                 }
@@ -381,12 +405,12 @@
                 // Draw eye
                 ctx.fillStyle = 'white';
                 ctx.beginPath();
-                ctx.arc(this.size * 0.3, -this.size * 0.1, this.size * 0.15, 0, Math.PI * 2);
+                ctx.arc(drawSize * 0.3, -drawSize * 0.1, drawSize * 0.15, 0, Math.PI * 2);
                 ctx.fill();
                 
                 ctx.fillStyle = 'black';
                 ctx.beginPath();
-                ctx.arc(this.size * 0.35, -this.size * 0.1, this.size * 0.08, 0, Math.PI * 2);
+                ctx.arc(drawSize * 0.35, -drawSize * 0.1, drawSize * 0.08, 0, Math.PI * 2);
                 ctx.fill();
                 
                 // Draw fins
@@ -395,26 +419,26 @@
                 
                 // Top fin
                 ctx.beginPath();
-                ctx.moveTo(-this.size * 0.2, -this.size * 0.4);
-                ctx.lineTo(this.size * 0.2, -this.size * 0.8);
-                ctx.lineTo(this.size * 0.6, -this.size * 0.3);
+                ctx.moveTo(-drawSize * 0.2, -drawSize * 0.4);
+                ctx.lineTo(drawSize * 0.2, -drawSize * 0.8);
+                ctx.lineTo(drawSize * 0.6, -drawSize * 0.3);
                 ctx.closePath();
                 ctx.fill();
                 
                 // Bottom fin
                 ctx.beginPath();
-                ctx.moveTo(-this.size * 0.2, this.size * 0.4);
-                ctx.lineTo(this.size * 0.2, this.size * 0.8);
-                ctx.lineTo(this.size * 0.6, this.size * 0.3);
+                ctx.moveTo(-drawSize * 0.2, drawSize * 0.4);
+                ctx.lineTo(drawSize * 0.2, drawSize * 0.8);
+                ctx.lineTo(drawSize * 0.6, drawSize * 0.3);
                 ctx.closePath();
                 ctx.fill();
                 
                 // Tail fin
                 ctx.beginPath();
-                ctx.moveTo(-this.size * 0.8, -this.size * 0.4);
-                ctx.lineTo(-this.size * 1.2, 0);
-                ctx.lineTo(-this.size * 0.8, this.size * 0.4);
-                ctx.lineTo(-this.size * 0.6, 0);
+                ctx.moveTo(-drawSize * 0.8, -drawSize * 0.4);
+                ctx.lineTo(-drawSize * 1.2, 0);
+                ctx.lineTo(-drawSize * 0.8, drawSize * 0.4);
+                ctx.lineTo(-drawSize * 0.6, 0);
                 ctx.closePath();
                 ctx.fill();
                 
@@ -601,7 +625,9 @@
                 // Optional cap to avoid runaway growth
                 f.size = Math.min(newSize, 120);
                 f.personalSpace = f.size * 3;
-                f.growHighlightUntil = Date.now() + 900; // ~0.9s glow
+                const now = Date.now();
+                f.growHighlightUntil = now + 900; // ~0.9s glow
+                f.growAnimStart = now; // start bounce animation
             }
         }
         
@@ -1265,6 +1291,20 @@
             return off.toDataURL('image/jpeg', 0.9);
         }
 
+        // Create a short, fun poem (< 20 words) about what's in the box
+        function makePoem(fullness, stone, plastic, other) {
+            const f = (typeof fullness === 'number') ? fullness : null;
+            const s = (typeof stone === 'number') ? stone : 0;
+            const p = (typeof plastic === 'number') ? plastic : 0;
+            const o = (typeof other === 'number') ? other : 0;
+            const dom = (p > s && p > o) ? 'plastic' : (s > p && s > o) ? 'stone' : (o > 0 ? 'trinkets' : 'treasures');
+            if (f === null) return 'Mystery box hums; secrets drift in quiet blue.';
+            if (f >= 90) return `Brimming tides: ${dom} bob; box overflows softly.`;
+            if (f >= 60) return `Heavy currents: swirling ${dom}; nearly full.`;
+            if (f >= 30) return `Gentle slosh: ${dom} twirl; space remains.`;
+            return `Shallow pool: few ${dom} wander; room awaits.`;
+        }
+
         async function analyzeFromCamera() {
             fullnessOutput.textContent = 'Analyzing...';
             try {
@@ -1300,22 +1340,12 @@
                 }
                 if (data) {
                     const { fullness, stone, plastic, other, reasons, outputFormat, raw } = data;
-                    const lines = [];
+                    const poem = makePoem(fullness, stone, plastic, other);
+                    const out = [poem];
                     if (raw) {
-                        lines.push(String(raw));
-                        lines.push('');
+                        out.push('', 'Raw output:', String(raw));
                     }
-                    lines.push(`Fullness: ${fullness ?? '-'}%`);
-                    if (Array.isArray(reasons) && reasons.length) {
-                        lines.push('Reasons:');
-                        reasons.forEach(r => lines.push(`- ${r}`));
-                    }
-                    if (raw && outputFormat === 'regex') {
-                        lines.push('');
-                        lines.push('Raw output:');
-                        lines.push(String(raw));
-                    }
-                    fullnessOutput.textContent = lines.join('\n');
+                    fullnessOutput.textContent = out.join('\n');
                     // Draw overlay on snapshot
                     if (typeof fullness === 'number') {
                         snapshotCtx.save();
