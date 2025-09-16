@@ -577,6 +577,48 @@
         let trashAddCount = 3; // fixed items per 't' press
         let yellowTintStrength = 0; // 0..1, increases with 't'
         
+        // Accumulating stomach trash per fish index
+        const stomachTrashByFish = new Map(); // index -> TrashItem[]
+        function randomBetween(min, max) { return min + Math.random() * (max - min); }
+        function addRandomStomachTrashForFishIndex(index, itemsToAdd = 1) {
+            if (index < 0 || index >= fish.length) return;
+            const list = stomachTrashByFish.get(index) || [];
+            for (let i = 0; i < itemsToAdd; i++) {
+                const typeRand = Math.random();
+                const type = typeRand < 0.3 ? 'ring' : typeRand < 0.6 ? 'shard' : typeRand < 0.85 ? 'chip' : 'cluster';
+                list.push({
+                    type,
+                    offsetXScale: randomBetween(-0.08, 0.12), // relative to fish.size
+                    offsetYScale: randomBetween(-0.05, 0.12),
+                    sizeScale: randomBetween(0.18, 0.42),
+                    rotation: randomBetween(-Math.PI, Math.PI),
+                    colorA: Math.random() < 0.5 ? 'rgba(173, 216, 230, 0.9)' : 'rgba(255, 215, 0, 0.85)',
+                    colorB: Math.random() < 0.5 ? 'rgba(255,255,255,0.9)' : 'rgba(46, 204, 113, 0.9)',
+                    pulseSpeed: randomBetween(0.003, 0.007)
+                });
+            }
+            stomachTrashByFish.set(index, list);
+        }
+        function addStomachTrashToTwoFish() {
+            if (!Array.isArray(fish) || fish.length === 0) return;
+            const indices = Array.from({ length: fish.length }, (_, i) => i);
+            // prefer fish without any trash
+            const clean = indices.filter(i => !stomachTrashByFish.has(i));
+            const pool = clean.length >= 2 ? clean : indices;
+            // shuffle pool
+            for (let i = pool.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                const tmp = pool[i];
+                pool[i] = pool[j];
+                pool[j] = tmp;
+            }
+            const first = pool[0];
+            let second = pool.find(i => i !== first);
+            if (second == null) second = first; // degenerate single-fish case
+            addRandomStomachTrashForFishIndex(first, 1);
+            addRandomStomachTrashForFishIndex(second, 1);
+        }
+        
         // Effect helpers
         function randomEffectMode() {
             const r = Math.random();
@@ -1155,8 +1197,8 @@
             }
             ctx.restore();
             
-            // Update group angle for natural movement
-            groupAngle += 0.005;
+            // Update group angle: gentle oscillation (reduces perpetual spinning)
+            groupAngle = Math.sin(Date.now() * 0.0005) * 0.8;
             
             // Check if scatter time is over
             if (isScattered && Date.now() - scatterTime > 3000) {
@@ -1173,6 +1215,80 @@
             fish.forEach((f, index) => {
                 f.update(isScattered, groupAngle, fish);
                 f.draw();
+                // Draw abstract trash inside fish stomachs (accumulating)
+                const items = stomachTrashByFish.get(index);
+                if (items && items.length) {
+                    const now = Date.now();
+                    ctx.save();
+                    ctx.translate(f.x, f.y);
+                    ctx.rotate(f.angle);
+                    items.forEach((it, idx) => {
+                        const base = f.size * it.sizeScale;
+                        const pulse = 0.9 + Math.sin(now * it.pulseSpeed + idx) * 0.08;
+                        const sx = f.size * it.offsetXScale;
+                        const sy = f.size * it.offsetYScale;
+                        const s = base * pulse;
+                        ctx.save();
+                        ctx.translate(sx, sy);
+                        ctx.rotate(it.rotation + Math.sin(now * it.pulseSpeed) * 0.1);
+                        if (it.type === 'ring') {
+                            ctx.globalAlpha = 0.85;
+                            ctx.strokeStyle = it.colorA;
+                            ctx.lineWidth = Math.max(1.5, s * 0.18);
+                            ctx.beginPath();
+                            ctx.ellipse(0, 0, s * 0.8, s * 0.5, 0.2, 0, Math.PI * 2);
+                            ctx.stroke();
+                            ctx.globalAlpha = 0.6;
+                            ctx.strokeStyle = it.colorB;
+                            ctx.lineWidth *= 0.6;
+                            ctx.stroke();
+                        } else if (it.type === 'shard') {
+                            ctx.globalAlpha = 0.9;
+                            ctx.fillStyle = it.colorA;
+                            ctx.beginPath();
+                            ctx.moveTo(-s * 0.6, -s * 0.2);
+                            ctx.lineTo(s * 0.4, -s * 0.05);
+                            ctx.lineTo(s * 0.2, s * 0.45);
+                            ctx.lineTo(-s * 0.5, s * 0.15);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.globalAlpha = 0.75;
+                            ctx.fillStyle = it.colorB;
+                            ctx.beginPath();
+                            ctx.ellipse(-s * 0.1, s * 0.05, s * 0.2, s * 0.08, 0.3, 0, Math.PI * 2);
+                            ctx.fill();
+                        } else if (it.type === 'chip') {
+                            ctx.globalAlpha = 0.85;
+                            ctx.fillStyle = it.colorA;
+                            ctx.beginPath();
+                            ctx.roundRect(-s * 0.45, -s * 0.3, s * 0.9, s * 0.6, s * 0.12);
+                            ctx.fill();
+                            ctx.globalAlpha = 0.8;
+                            ctx.fillStyle = it.colorB;
+                            for (let q = -1; q <= 1; q++) {
+                                ctx.fillRect(-s * 0.25 + q * s * 0.2, -s * 0.1, s * 0.12, s * 0.22);
+                            }
+                        } else { // cluster
+                            ctx.globalAlpha = 0.8;
+                            ctx.fillStyle = it.colorA;
+                            for (let b = 0; b < 5; b++) {
+                                const da = (b * 2.399) + idx * 0.3;
+                                const rx = Math.cos(da) * s * 0.4;
+                                const ry = Math.sin(da) * s * 0.25;
+                                ctx.beginPath();
+                                ctx.arc(rx, ry, s * 0.18, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                            ctx.globalAlpha = 0.7;
+                            ctx.fillStyle = it.colorB;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, s * 0.22, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                        ctx.restore();
+                    });
+                    ctx.restore();
+                }
             });
             
             // Update and draw water effects
@@ -1232,6 +1348,8 @@
                 triggerScatterRight();
             } else if (key === 'k') {
                 triggerScatter();
+            } else if (key === 'o') {
+                addStomachTrashToTwoFish();
             } else if (key === 't') {
                 // Add more floating trash each press
                 for (let i = 0; i < trashAddCount; i++) {
@@ -1291,18 +1409,31 @@
             return off.toDataURL('image/jpeg', 0.9);
         }
 
-        // Create a short, fun poem (< 20 words) about what's in the box
+        // Create a short, fun poem (<= 30 words) from a fish's perspective
+        // Avoid mentioning "box"; base on fullness and plastic/stone/other ratios
         function makePoem(fullness, stone, plastic, other) {
             const f = (typeof fullness === 'number') ? fullness : null;
             const s = (typeof stone === 'number') ? stone : 0;
             const p = (typeof plastic === 'number') ? plastic : 0;
             const o = (typeof other === 'number') ? other : 0;
-            const dom = (p > s && p > o) ? 'plastic' : (s > p && s > o) ? 'stone' : (o > 0 ? 'trinkets' : 'treasures');
-            if (f === null) return 'Mystery box hums; secrets drift in quiet blue.';
-            if (f >= 90) return `Brimming tides: ${dom} bob; box overflows softly.`;
-            if (f >= 60) return `Heavy currents: swirling ${dom}; nearly full.`;
-            if (f >= 30) return `Gentle slosh: ${dom} twirl; space remains.`;
-            return `Shallow pool: few ${dom} wander; room awaits.`;
+            const sum = Math.max(1, s + p + o);
+            const pr = p / sum, sr = s / sum, orr = o / sum;
+            const fullnessLine = (() => {
+                if (f == null) return 'Unknown currents ripple; I hover, listening.';
+                if (f >= 90) return 'Crowded water presses; I dart between';
+                if (f >= 60) return 'Restless currents; I circle past';
+                if (f >= 30) return 'Quiet swells; I glide beside';
+                return 'Wide blue; I wander through';
+            })();
+            const dominant = (pr > sr && pr > orr) ? 'plastic' : (sr > pr && sr > orr) ? 'stone' : (orr > 0 ? 'odd drifting things' : 'mixed drifting things');
+            const domPhrase = (dominant === 'plastic') ? 'bitter glitter of plastic' : (dominant === 'stone') ? 'the cool hush of stone' : dominant;
+            const feeling = (() => {
+                if (pr > 0.6) return 'I ache; home tastes wrong.';
+                if (pr > 0.35) return 'I fret, yet keep weaving.';
+                if (sr > 0.6) return 'I rest; stones steady me.';
+                return 'I breathe easy, dreaming bubbles.';
+            })();
+            return `${fullnessLine} ${domPhrase}. ${feeling}`;
         }
 
         async function analyzeFromCamera() {
