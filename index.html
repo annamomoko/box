@@ -154,6 +154,30 @@
             font-size: 14px;
         }
 
+        /* Center screen ephemeral message */
+        .center-message {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 60; /* above other UI */
+            pointer-events: none;
+        }
+        .center-message .text {
+            max-width: 72vw;
+            text-align: center;
+            color: #ffffff;
+            font-family: "Avenir", "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-weight: 500;
+            line-height: 1.35;
+            letter-spacing: 0.4px;
+            font-size: clamp(14px, 2.1vw, 22px);
+            opacity: 0;
+        }
+        .center-message .text.show { animation: centerFade 8s ease-out forwards; }
+        @keyframes centerFade { from { opacity: 1; } to { opacity: 0; } }
+
         /* Hide UI helper */
         .hidden-ui .instructions,
         .hidden-ui .status,
@@ -197,6 +221,7 @@
     <video id="video" style="position: absolute; top: 10px; right: 10px; width: 160px; height: 120px; border: 2px solid white; border-radius: 8px; z-index: 20;"></video>
     <canvas id="canvas"></canvas>
     <div id="hand-counter" class="hand-counter">Hands: 0</div>
+    <div id="center-message" class="center-message"><div class="text"></div></div>
 
     <script>
         const canvas = document.getElementById('canvas');
@@ -214,6 +239,12 @@
         const snapshotCtx = snapshotCanvas.getContext('2d');
         const handCounterEl = document.getElementById('hand-counter');
         let handCount = 0;
+		let appliedGreenThemeAt200 = false;
+		let appliedOrangeThemeAt500 = false;
+
+        // Center message refs
+        const centerMessage = document.getElementById('center-message');
+        const centerMessageText = centerMessage.querySelector('.text');
 
         const btnBlue = document.getElementById('btn-blue');
         const btnGreen = document.getElementById('btn-green');
@@ -246,6 +277,9 @@
                 this.growAnimStart = 0;
                 this.growAnimDuration = 500; // ms
                 this.growOvershoot = 0.3; // overshoot scale ~30% (more obvious)
+				this.innerGlowUntil = 0; // when > now, render inner glow (stomach trash added)
+				this.innerGlowStart = 0; // start time of inner glow
+				this.innerGlowDuration = 1200; // total duration for blinking glow
             }
             
             getGrowScale(now) {
@@ -378,11 +412,44 @@
                 ctx.translate(this.x, this.y);
                 ctx.rotate(this.angle);
                 
-                // Draw fish body
-                ctx.fillStyle = this.color;
-                ctx.beginPath();
-                ctx.ellipse(0, 0, drawSize, drawSize * 0.6, 0, 0, Math.PI * 2);
-                ctx.fill();
+					// Draw fish body
+					ctx.fillStyle = this.color;
+					ctx.beginPath();
+					ctx.ellipse(0, 0, drawSize, drawSize * 0.6, 0, 0, Math.PI * 2);
+					ctx.fill();
+
+					// Inner glow to highlight stomach trash addition (blinks twice)
+					if (now < this.innerGlowUntil) {
+						ctx.save();
+						const elapsed = Math.max(0, now - (this.innerGlowStart || now));
+						const dur = this.innerGlowDuration || 1200;
+						const u = Math.min(1, elapsed / dur);
+						// Two blinks: use sin over 2 cycles with easing envelope
+						const cycles = 2; // two flashes
+						const wave = Math.max(0, Math.sin(u * Math.PI * cycles));
+						const ease = 1 - Math.pow(1 - u, 2);
+						const intensity = Math.pow(wave, 1.4) * (0.6 + 0.4 * (1 - u)) * ease;
+						ctx.globalCompositeOperation = 'screen';
+						ctx.globalAlpha = 0.35 + 0.55 * intensity;
+						// More vibrant inner colors
+						const grad = ctx.createRadialGradient(0, 0, drawSize * 0.04, 0, 0, drawSize * 0.9);
+						grad.addColorStop(0, 'rgba(255, 120, 0, 1.0)');   // hot orange core
+						grad.addColorStop(0.4, 'rgba(255, 220, 100, 0.9)'); // bright amber
+						grad.addColorStop(1, 'rgba(255, 240, 170, 0)');     // soft falloff
+						ctx.fillStyle = grad;
+						ctx.beginPath();
+						ctx.ellipse(0, 0, drawSize, drawSize * 0.6, 0, 0, Math.PI * 2);
+						ctx.fill();
+						// Emphasis ring that also pulses with the blink
+						ctx.shadowColor = 'rgba(255, 200, 60, 1)';
+						ctx.shadowBlur = 28 + 14 * intensity;
+						ctx.lineWidth = Math.max(3, drawSize * (0.06 + 0.04 * intensity));
+						ctx.strokeStyle = `rgba(255, 200, 60, ${0.4 + 0.5 * intensity})`;
+						ctx.beginPath();
+						ctx.ellipse(0, 0, drawSize * (0.65 + 0.06 * intensity), drawSize * 0.6 * (0.65 + 0.06 * intensity), 0, 0, Math.PI * 2);
+						ctx.stroke();
+						ctx.restore();
+					}
                 
                 // Draw fish outline
                 ctx.strokeStyle = 'rgba(255,255,255,0.3)';
@@ -598,6 +665,14 @@
                 });
             }
             stomachTrashByFish.set(index, list);
+            // trigger visible inner glow on that fish
+            const f = fish[index];
+            if (f) {
+                const now = Date.now();
+                f.innerGlowStart = now;
+                f.innerGlowDuration = 1400; // slightly longer to fit two blinks
+                f.innerGlowUntil = now + f.innerGlowDuration;
+            }
         }
         function addStomachTrashToTwoFish() {
             if (!Array.isArray(fish) || fish.length === 0) return;
@@ -911,8 +986,22 @@
                     if (handCounterEl) handCounterEl.textContent = `Hands: ${handCount}`;
                     // Simplified: always trigger general scatter on hand detection
                     triggerScatter();
-                    if (handCount % 2 === 0) {
+                    if (handCount % 3 === 0) {
                         growHalfFishBy(0.05);
+                    }
+                    // Every 10th hand: add stomach trash to two fish and glow
+                    if (handCount % 10 === 0) {
+                        addStomachTrashToTwoFish();
+                    }
+                    // At 200 hands, switch to Green-Yellow theme once
+                    if (!appliedGreenThemeAt200 && handCount >= 200) {
+                        appliedGreenThemeAt200 = true;
+                        applyBackgroundGradient('green');
+                    }
+                    // At 500 hands, switch to Orange-Red theme once
+                    if (!appliedOrangeThemeAt500 && handCount >= 500) {
+                        appliedOrangeThemeAt500 = true;
+                        applyBackgroundGradient('orange');
                     }
                     lastHandDetection = Date.now();
                     cameraStatus.textContent = 'Camera: Hand detected! ✋';
@@ -1341,6 +1430,30 @@
                 if (handCounterEl) handCounterEl.textContent = `Hands: ${handCount}`;
                 growHalfFishBy(0.05);
                 triggerScatter();
+                if (!appliedGreenThemeAt200 && handCount >= 200) {
+                    appliedGreenThemeAt200 = true;
+                    applyBackgroundGradient('green');
+                }
+                if (!appliedOrangeThemeAt500 && handCount >= 500) {
+                    appliedOrangeThemeAt500 = true;
+                    applyBackgroundGradient('orange');
+                }
+            } else if (key === 'z') {
+                // Capture a frame, analyze, and display the poem in the center overlay
+                (async () => {
+                    try {
+                        const poem = await analyzeForPoemOnly();
+                        centerMessageText.textContent = poem || '';
+                    } catch (e) {
+                        centerMessageText.textContent = 'I tried to speak, but currents tangled my words.';
+                    }
+                    centerMessageText.classList.remove('show');
+                    // force reflow to restart animation
+                    // eslint-disable-next-line no-unused-expressions
+                    centerMessageText.offsetWidth;
+                    centerMessageText.classList.add('show');
+                    setTimeout(() => { centerMessageText.classList.remove('show'); }, 8000);
+                })();
             }
             if (key === 'j') {
                 triggerScatterLeft();
@@ -1498,6 +1611,32 @@
             } catch (err) {
                 console.error(err);
                 fullnessOutput.textContent = err && err.message ? err.message : 'Error analyzing image.';
+            }
+        }
+
+        // Helper used by 'z' key to return poem only (no UI updates)
+        async function analyzeForPoemOnly() {
+            try {
+                const dataUrl = captureFrameDataUrl();
+                let res = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ imageBase64: dataUrl })
+                });
+                let data = await res.json().catch(() => null);
+                if (!res.ok && res.status === 404) {
+                    const blob = await captureFrameAsBlob();
+                    const form = new FormData();
+                    form.append('image', blob, 'frame.jpg');
+                    res = await fetch('/analyze', { method: 'POST', body: form });
+                    data = await res.json().catch(() => null);
+                }
+                if (!res.ok) return null;
+                if (!data) return null;
+                const { fullness, stone, plastic, other } = data;
+                return makePoem(fullness, stone, plastic, other);
+            } catch {
+                return null;
             }
         }
 
