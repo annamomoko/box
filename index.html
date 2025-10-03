@@ -174,10 +174,28 @@
             letter-spacing: 0.4px;
             font-size: clamp(14px, 2.1vw, 22px);
             opacity: 0;
+            display: inline-block;
+            will-change: transform, opacity;
         }
         .center-message .text.show { animation: centerFade 8s ease-out forwards; }
-        .center-message .text.boost { transform: scale(1.15); }
+        .center-message .text.boost { transform: scale(1.25); }
+        .center-message .text.ripple { animation: ripple 12s ease-in-out 1; }
+        .center-message .word { display: inline-block; white-space: pre; }
+        .center-message .word.fly { animation: wordFly var(--fly-dur, 3s) ease-in forwards; animation-delay: var(--fly-delay, 0s); }
         @keyframes centerFade { from { opacity: 1; } to { opacity: 0; } }
+        @keyframes ripple {
+            0% { transform: translateY(0) scale(1); }
+            15% { transform: translateY(-2px) scale(1.01); }
+            30% { transform: translateY(1px) scale(1); }
+            45% { transform: translateY(-1px) scale(1.01); }
+            60% { transform: translateY(1px) scale(1); }
+            75% { transform: translateY(-0.5px) scale(1.005); }
+            100% { transform: translateY(0) scale(1); }
+        }
+        @keyframes wordFly {
+            0% { opacity: 1; transform: translate(0, 0) rotate(0deg); filter: blur(0); }
+            100% { opacity: 0; transform: translate(var(--tx, 0), var(--ty, 0)) rotate(var(--rot, 0deg)); filter: blur(1px); }
+        }
 
         /* Hide UI helper */
         .hidden-ui .instructions,
@@ -1442,12 +1460,18 @@
             } else if (key === 'z') {
                 // Capture a frame, analyze, and display the poem in the center overlay
                 (async () => {
-                    try {
-                        const poem = await analyzeForPoemOnly();
-                        centerMessageText.textContent = poem || '';
-                    } catch (e) {
-                        centerMessageText.textContent = 'I tried to speak, but currents tangled my words.';
-                    }
+                    let poem = '';
+                    try { poem = await analyzeForPoemOnly() || ''; } catch (_) { poem = ''; }
+                    if (!poem) poem = 'I tried to speak, but currents tangled my words.';
+                    // Build word spans so we can animate each word
+                    const words = poem.split(/(\s+)/);
+                    centerMessageText.innerHTML = '';
+                    words.forEach((w, idx) => {
+                        const span = document.createElement('span');
+                        span.className = 'word';
+                        span.textContent = w;
+                        centerMessageText.appendChild(span);
+                    });
                     centerMessageText.classList.remove('show');
                     centerMessageText.classList.add('boost'); // 15% bigger for poem
                     // force reflow to restart animation
@@ -1456,10 +1480,33 @@
                     // extend linger time to 15s
                     centerMessageText.style.animationDuration = '15s';
                     centerMessageText.classList.add('show');
+                    // After 12s, start word fly-out in random directions, staggered
+                    setTimeout(() => {
+                        const spans = centerMessageText.querySelectorAll('.word');
+                        spans.forEach((span, i) => {
+                            // skip pure whitespace nodes for animation
+                            if (!span.textContent || /^\s+$/.test(span.textContent)) return;
+                            const angle = Math.random() * Math.PI * 2;
+                            const dist = 40 + Math.random() * 120; // px
+                            const tx = Math.cos(angle) * dist;
+                            const ty = Math.sin(angle) * dist;
+                            const rot = (Math.random() * 40 - 20) + 'deg';
+                            const dur = (2.4 + Math.random() * 1.2) + 's';
+                            const delay = (Math.random() * 0.5) + 's';
+                            span.style.setProperty('--tx', tx + 'px');
+                            span.style.setProperty('--ty', ty + 'px');
+                            span.style.setProperty('--rot', rot);
+                            span.style.setProperty('--fly-dur', dur);
+                            span.style.setProperty('--fly-delay', delay);
+                            span.classList.add('fly');
+                        });
+                    }, 12000);
+                    // Cleanup after 15s total
                     setTimeout(() => {
                         centerMessageText.classList.remove('show');
                         centerMessageText.classList.remove('boost');
                         centerMessageText.style.animationDuration = '';
+                        centerMessageText.innerHTML = '';
                     }, 15000);
                 })();
             }
