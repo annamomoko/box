@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Jost:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
     <title>Abstract Fish Swimming</title>
   <style>
         body {
@@ -168,8 +171,10 @@
             max-width: 72vw;
             text-align: center;
             color: #ffffff;
-            font-family: "Avenir", "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-family: "Jost", sans-serif;
+            font-optical-sizing: auto;
             font-weight: 500;
+            font-style: normal;
             line-height: 1.35;
             letter-spacing: 0.4px;
             font-size: clamp(14px, 2.1vw, 22px);
@@ -178,7 +183,9 @@
             will-change: transform, opacity;
         }
         .center-message .text.show { animation: centerFade 8s ease-out forwards; }
-        .center-message .text.boost { transform: scale(1.18); }
+        /* When ripple class is present, run both fade and ripple simultaneously */
+        .center-message .text.show.ripple { animation: centerFade var(--fade-dur, 15s) ease-out forwards, ripple 12s ease-in-out 1; }
+        .center-message .text.boost { transform: scale(1.15); }
         .center-message .text.ripple { animation: ripple 12s ease-in-out 1; }
         .center-message .word { display: inline-block; white-space: pre; }
         .center-message .word.fly { animation: wordFly var(--fly-dur, 3s) ease-in forwards; animation-delay: var(--fly-delay, 0s); }
@@ -1642,8 +1649,10 @@
             // Restart animation
             // eslint-disable-next-line no-unused-expressions
             centerMessageText.offsetWidth;
+            centerMessageText.style.setProperty('--fade-dur', '15s');
             centerMessageText.style.animationDuration = '15s';
             centerMessageText.classList.add('show');
+            centerMessageText.classList.add('ripple');
             // Start word fly-away at ~12s
             setTimeout(() => {
                 const spans = centerMessageText.querySelectorAll('.word');
@@ -1668,7 +1677,9 @@
             setTimeout(() => {
                 centerMessageText.classList.remove('show');
                 centerMessageText.classList.remove('boost');
+                centerMessageText.classList.remove('ripple');
                 centerMessageText.style.animationDuration = '';
+                centerMessageText.style.removeProperty('--fade-dur');
                 centerMessageText.innerHTML = '';
             }, 15000);
         }
