@@ -146,11 +146,11 @@
             bottom: 20px;
             right: 20px;
             z-index: 50;
-            color: #fff;
-            background: rgba(0,0,0,0.45);
-            border: 1px solid rgba(255,255,255,0.5);
-            border-radius: 8px;
-            padding: 6px 10px;
+            color: #ffffff; /* simple white text */
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            padding: 0;
             font-size: 14px;
         }
 
@@ -176,6 +176,7 @@
             opacity: 0;
         }
         .center-message .text.show { animation: centerFade 8s ease-out forwards; }
+        .center-message .text.boost { transform: scale(1.15); }
         @keyframes centerFade { from { opacity: 1; } to { opacity: 0; } }
 
         /* Hide UI helper */
@@ -192,7 +193,7 @@
         }
   </style>
 </head>
-<body>
+<body class="hidden-ui">
     <div class="theme-buttons" id="theme-buttons">
         <button id="btn-blue" title="Blue Gradient">Blue</button>
         <button id="btn-green" title="Green → Yellow">Green-Yellow</button>
@@ -220,7 +221,7 @@
 
     <video id="video" style="position: absolute; top: 10px; right: 10px; width: 160px; height: 120px; border: 2px solid white; border-radius: 8px; z-index: 20;"></video>
     <canvas id="canvas"></canvas>
-    <div id="hand-counter" class="hand-counter">Hands: 0</div>
+    <div id="hand-counter" class="hand-counter">0</div>
     <div id="center-message" class="center-message"><div class="text"></div></div>
 
     <script>
@@ -983,7 +984,7 @@
                 
                 if (handDetected && Date.now() - lastHandDetection > handDetectionCooldown) {
                     handCount++;
-                    if (handCounterEl) handCounterEl.textContent = `Hands: ${handCount}`;
+                    if (handCounterEl) handCounterEl.textContent = String(handCount);
                     // Simplified: always trigger general scatter on hand detection
                     triggerScatter();
                     if (handCount % 3 === 0) {
@@ -1427,7 +1428,7 @@
             } else if (key === 'f') {
                 // Simulate +10 hand detections and trigger growth effect
                 handCount += 10;
-                if (handCounterEl) handCounterEl.textContent = `Hands: ${handCount}`;
+                if (handCounterEl) handCounterEl.textContent = String(handCount);
                 growHalfFishBy(0.05);
                 triggerScatter();
                 if (!appliedGreenThemeAt200 && handCount >= 200) {
@@ -1448,11 +1449,18 @@
                         centerMessageText.textContent = 'I tried to speak, but currents tangled my words.';
                     }
                     centerMessageText.classList.remove('show');
+                    centerMessageText.classList.add('boost'); // 15% bigger for poem
                     // force reflow to restart animation
                     // eslint-disable-next-line no-unused-expressions
                     centerMessageText.offsetWidth;
+                    // extend linger time to 15s
+                    centerMessageText.style.animationDuration = '15s';
                     centerMessageText.classList.add('show');
-                    setTimeout(() => { centerMessageText.classList.remove('show'); }, 8000);
+                    setTimeout(() => {
+                        centerMessageText.classList.remove('show');
+                        centerMessageText.classList.remove('boost');
+                        centerMessageText.style.animationDuration = '';
+                    }, 15000);
                 })();
             }
             if (key === 'j') {
